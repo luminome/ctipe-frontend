@@ -14,7 +14,10 @@ async function loader(resource_obj_list, prog_callback=null) {
 		if (prog_callback) do_callback(prog_callback, 1, obj);
 
 		let ref = fetch(obj.url, opts)
-		.then(response => response.text())
+		.then(response => {
+			obj.size = Number(response.headers.get("content-length"));
+			return response.text();
+		})
 		.then(function (text) {
 			if(prog_callback) do_callback(prog_callback, -1, obj);
 			return obj.type === 'json' ? JSON.parse(text) : text;

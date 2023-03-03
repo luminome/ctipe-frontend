@@ -1,0 +1,5 @@
+ln -s /Users/sac/Sites/library/three-js-base src/js/three-js-base
+or from src folder
+ln -s ../../../library/three-sac ./three-sac
+
+npm install stats.js

@@ -1,21 +1,107 @@
+import * as ALL from './ui-three-base';
+
+
+
+
+
+return false;
+
+
+
+
+
+/**/
+
 import * as THREE from 'three/build/three.module.js';
-import {mergeBufferGeometries, mergeVertices} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import {dragControls} from './drags-lite-beta.js';
-import {keyControls} from './drags-lite-keys-beta.js';
+import {mergeVertices} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {events as EVT} from "./ui-events";
+import {controls as CTL} from "./ui-controls";
+import {environment as RUN} from "./ui-scene";
+
+
+
 import {loader} from './loader.js';
 import {Conrec} from './vendor/conrec.js';
+
+// import {wedge as Model} from "../../../wedge/src/three-js-base/wedge.three-js-base";
+// import * as util from '../../../wedge/src/three-js-base/util.three-js-base';
+// import config from '../../../wedge/src/three-js-base/config.json';
 
 const util_color = new THREE.Color();
 
 import package_detail from '../../package.json';
 
-let scene, model, renderer, root_plane, r_root_plane, view_axes, render_l_date, trace_root_plane;
+let scene, model, renderer, root_plane, r_root_plane, view_axes, render_l_date, trace_root_plane, trace_date_plane;
+let debug_trace, date_trace, load_trace;
 
 const ray_caster = new THREE.Raycaster();
-
 ray_caster.params = {
     Line: {threshold: 1},
     Points: {threshold: 3.0},
+}
+
+
+const obs = document.getElementById('obs');
+obs.style.display = 'none';
+
+const get_t_from_dateStamp = (t) => {
+    const d_arr = t.split('-');
+    const d = {
+        month: d_arr[0]-1,
+        day: d_arr[1],
+        year: d_arr[2],
+        hour: d_arr[3],
+        minute: d_arr[4]
+    }
+    const dd = new Date(Date.UTC(d.year, d.month, d.day, d.hour, d.minute));//, 0.0, 0.0);
+
+    const d2 = new Date( dd.getUTCFullYear(), dd.getUTCMonth(), dd.getUTCDate(), dd.getUTCHours(), dd.getUTCMinutes(), dd.getUTCSeconds() );
+    ///console.log(t, dd.getTime());
+    const dct = d2.getTime();//.valueOf(); //Date.parse(dd.toUTCString());//new Date(d.year, d.month, d.day, d.hour, d.minute);
+    //const dct = dd.toUTCString();///new Date(Date.parse(dcft));//
+
+    //;//dd.UTC();//new Date(d.year, d.month, d.day, d.hour, d.minute).getUTCDate();// new Date(d.year, d.month, d.day, dd.getUTCHours(), d.minute);
+
+    const spe = d_arr[2]+((d_arr[0]).padStart(2, '0'))+(d_arr[1].padStart(2, '0'))+(d_arr[3].padStart(2, '0'))+(d_arr[4].padStart(2, '0'));
+    //    console.log(spe);
+
+
+
+    //
+    // const options = {
+    //     weekday:"long",
+    //     day:"2-digit",
+    //     year:"numeric",
+    //     month:"long",
+    //     hour:"2-digit",
+    //     minute:"2-digit",
+    //     timeZoneName:"long",
+    //     hour12:false
+    // }
+
+    const d_options = {
+        weekday:"long",
+        day:"2-digit",
+        year:"numeric",
+        month:"long",
+    };
+    const t_options = {
+        hour:"2-digit",
+        minute:"2-digit",
+        hour12:false
+    };
+    const z_options = {
+        timeZoneName:"long",
+    };
+
+    return {
+        d:dd.toLocaleDateString('en-us', d_options),
+        t:dd.toLocaleTimeString('en-us', t_options),
+        z:dd.toLocaleDateString('en-us', z_options),
+        dd:dd,
+        df:spe,
+    } // "Jul 2021 Friday"
+
 }
 
 const vc = {
@@ -59,7 +145,15 @@ const touch = {
 const vars = {
     manifest_path: 'https://ctipe-production.up.railway.app/m?manifest',
     assets_path: 'https://ctipe-production.up.railway.app/',
-    trace: true,
+    debug_trace: false,
+    animator:{
+        value_lerp: 0.25,
+        rate: 100.0, //ms
+        animating: true
+    },
+    debug:{
+        debug:'info',
+    },
     user:{
         mouse:{
             state: null,
@@ -86,15 +180,31 @@ const vars = {
     evt_cb:{},
     evt_reactivity: 200.0,
     evt_input: {
-        key: function(raw_keys_arr){
+        keys: function(raw_keys_arr){
             keys.active = [...raw_keys_arr];//raw_keys_arr;
             //keys.previous = [];
             if (raw_keys_arr.includes('Tab')) {
                 if (!keys.previous.includes('Tab')) {
-                    vars.trace = !vars.trace;
-                    trace_root_plane.visible = vars.trace;
+                    vars.debug_trace = !vars.debug_trace;
+                    debug_trace.plane_object.visible = vars.debug_trace;
                     //obs.innerHTML = vars.user.state;
                 }
+            }
+            if (raw_keys_arr.includes('Space')) {
+                if (!keys.previous.includes('Space')) {
+                    vars.animator.animating = !vars.animator.animating;
+                    //animator.animate();
+                    // ///debug_trace.plane_object.visible = vars.debug_trace;
+                    // //obs.innerHTML = vars.user.state;
+                }
+            }
+            if (raw_keys_arr.includes('ArrowLeft')) {
+                vars.animator.animating = false;
+                animator.get_frame(-1);
+            }
+            if (raw_keys_arr.includes('ArrowRight')) {
+                vars.animator.animating = false;
+                animator.get_frame(1);
             }
             keys.previous = [...keys.active];
         },
@@ -211,6 +321,30 @@ const vars = {
     event_not_idle: function() {
         ray_caster.setFromCamera(vars.user.mouse.raw, cam.camera);
         ray_caster.ray.intersectPlane(root_plane, vars.user.mouse.plane_pos);
+
+        ray_caster.setFromCamera(vars.user.mouse.raw, cam.camera);
+        const intersects = ray_caster.intersectObjects(scene.children, true);
+        let analog = 'none';
+        if(intersects.length > 0) {
+            let found = null;
+            for(let i=0; i<intersects.length; i++){
+                if (intersects[i].object.name === 'prog_bar') {
+                    found = [i, intersects[i]];
+                    break;
+                }
+            }
+            if(found!==null) {
+
+                analog = `prog_bar intersection(${found[0]}) index:${found[1].instanceId}`;
+                //console.log(found);
+                if(vars.evt.action === 'click'){
+                    vars.debug.selecta = found[1].instanceId;
+                    animator.get_frame(vars.debug.selecta, true);
+                    vars.evt.action = null;
+                }
+            }
+        }
+        vars.debug.analog = analog;
     },
     view:{
         scene_width: 20,
@@ -294,6 +428,33 @@ cam.cube = new THREE.Mesh(cube_box, new THREE.MeshStandardMaterial({color: 0xfff
 cam.cube.updateMatrix();
 cam.cube.userData.originalMatrix = cam.cube.matrix.clone();
 
+const visibleAtZDepth = (depth, camera) => {
+    // compensate for cameras not positioned at z=0
+    const cameraOffset = camera.position.z;
+    if (depth < cameraOffset) depth -= cameraOffset;
+    else depth += cameraOffset;
+
+    // vertical fov in radians
+    const vFOV = camera.fov * Math.PI / 180;
+
+    // Math.abs to ensure the result is always positive
+    const vis_ht = 2 * Math.tan(vFOV / 2) * Math.abs(depth);
+    return {'h': vis_ht, 'w': vis_ht * camera.aspect};
+};
+
+const array_at_index = (obj, index) => {
+    return [
+        obj[index*3],
+        obj[index*3+1],
+        obj[index*3+2]
+    ]
+}
+
+const set_array_at_index = (obj, index, array) => {
+    obj[index*3] = array[0];
+    obj[index*3+1] = array[1];
+    obj[index*3+2] = array[2];
+}
 
 const labels = {
     init: false,
@@ -310,7 +471,7 @@ const labels = {
     },
     object: new THREE.Group(),
     label(text, tick=null){
-        function init(){
+        function update(){
             const g = L.canvas.getContext('2d');
             L.canvas.width = 256;
             L.canvas.height = 256;
@@ -319,11 +480,13 @@ const labels = {
             g.font = `${L.line_height}px Helvetica`;
             g.fillStyle = 'white';
 
-            const wid = g.measureText(text).width;
-            const asc = g.measureText(text).actualBoundingBoxAscent;
-            const hgt = asc+g.measureText(text).actualBoundingBoxDescent;
+            const wid = g.measureText(L.text).width;
+            const asc = g.measureText(L.text).actualBoundingBoxAscent;
+            const hgt = asc+g.measureText(L.text).actualBoundingBoxDescent;
 
             g.fillText(L.text, L.canvas.width/2 - wid/2, L.canvas.height/2 + hgt/2);
+
+            if(L.texture) L.texture.needsUpdate = true;
 
             //#// nice canvas-based ticks here
             /*
@@ -370,10 +533,11 @@ const labels = {
                 g.stroke();
             }
             */
+        }
+        function init(){
 
-
+            L.update();
             L.object = new THREE.Group();
-
             //#//Vector line based ticks handler;
             if(L.tick !== null) {
                 let k_flo;
@@ -410,7 +574,6 @@ const labels = {
                 L.object.add(L.line);
             }
 
-
             L.texture = new THREE.Texture(L.canvas);
             L.texture.needsUpdate = true;
 
@@ -430,76 +593,78 @@ const labels = {
 
         }
         const L = {
+            object:null,
+            mesh:null,
             text:text,
             tick: tick,
             texture: null,
             canvas: document.createElement('canvas'),
             line_height: 48,
             init,
+            update
         }
         return L
     },
-    make_label_object(text){
-
-        function render(axis, interval, origin, tick, is_range, do_look=true, faces=null){
-            if(is_range === true) {
-                for (let n = labels.bounds[axis][0]; n <= labels.bounds[axis][1]; n += interval) {
-                    const label = labels.label(n, tick);
-                    label.init();
-                    const interval_n = Math.abs(labels.bounds[axis][0]) + n;
-                    const interval_scale = labels.bounds[axis][0] === 0 ? labels.bounds[axis][1] / df.model.bounds[axis] : Math.abs(labels.bounds[axis][0]) / df.model.bounds[axis];
-                    label.look = do_look;
-                    label.object.position.copy(origin);
-                    label.object.position[axis] = interval_n / interval_scale;
-
-                    labels.object.add(label.object);
-                    labels.all.push(label);
-                }
-            }else{
-                const label = labels.label(is_range, tick);
+    render(axis, interval, origin, tick, is_range, do_look=true, faces=null){
+        if(is_range === true) {
+            for (let n = labels.bounds[axis][0]; n <= labels.bounds[axis][1]; n += interval) {
+                const label = labels.label(n, tick);
                 label.init();
+                const interval_n = Math.abs(labels.bounds[axis][0]) + n;
+                const interval_scale = labels.bounds[axis][0] === 0 ? labels.bounds[axis][1] / df.model.bounds[axis] : Math.abs(labels.bounds[axis][0]) / df.model.bounds[axis];
                 label.look = do_look;
-
-
-                if(faces!==null){
-                    vc.e.copy(directions[faces]);
-                    label.mesh.lookAt(vc.e);
-                }
-
                 label.object.position.copy(origin);
+                label.object.position[axis] = interval_n / interval_scale;
                 labels.object.add(label.object);
                 labels.all.push(label);
             }
+        }else{
+            const label = labels.label(is_range, tick);
+            label.init();
+            label.look = do_look;
+            if(faces!==null){
+                vc.e.copy(directions[faces]);
+                label.mesh.lookAt(vc.e);
+            }
+            label.object.position.copy(origin);
+            labels.object.add(label.object);
+            labels.all.push(label);
+            return label;
         }
+    },
+    make_label_object(text){
+
+        labels.bounds.y[1] = df.model.data_max;
 
         vc.a.set(0.0,0.0,(df.model.bounds.z*2.0)+1.0);
-        render('x', 30.0, vc.a, 'I', true);
+        labels.render('x', 30.0, vc.a, 'I', true);
 
         vc.a.set(-1.0,0.0,0.0);
-        render('z', 15.0, vc.a, 'R', true);
+        labels.render('z', 15.0, vc.a, 'R', true);
 
         vc.a.set(df.model.bounds.x+1.0,0.0,(df.model.bounds.z*2.0));
-        render('y', 20.0, vc.a, 'L', true);
+        labels.render('y', 20.0, vc.a, 'L', true);
 
         vc.a.set(df.model.bounds.x,df.model.bounds.y+1.0,0.0);
-        render(null, null, vc.a, 'B', 'GMT');
+        labels.render(null, null, vc.a, 'B', 'GMT');
 
         vc.a.set(0.0,df.model.bounds.y+1.0,0.0);
-        render(null, null, vc.a, 'B', 'GMT+24');
+        labels.render(null, null, vc.a, 'B', 'GMT+24');
 
         vc.a.set(df.model.bounds.x+1.0, 0.0, df.model.bounds.z);
-        render(null, null, vc.a, 'L', 'EQUATOR', false, 'up');
+        labels.render(null, null, vc.a, 'L', 'EQUATOR', false, 'up');
 
         vc.a.set((df.model.bounds.x/2.0),df.model.bounds.y+1.0,0.0);
-        render(null, null, vc.a, 'B', 'NORTH', false);
+        labels.render(null, null, vc.a, 'B', 'NORTH', false);
 
         vc.a.set((df.model.bounds.x/2.0),0.0,(df.model.bounds.z*2.0)+2.0);
-        render(null, null, vc.a, null, 'ºEAST', false, 'up');
+        labels.render(null, null, vc.a, null, 'ºEAST', false, 'up');
 
         vc.a.set(df.model.bounds.x+2.0,df.model.bounds.y/2.0,(df.model.bounds.z*2.0));
-        render(null, null, vc.a, null, 'CTIPe', false);
+        labels.render(null, null, vc.a, null, 'CTIPe', false);
 
         df.model.world_bounds.add(labels.object);
+
         labels.init = true;
     },
 }
@@ -518,36 +683,159 @@ const color_bar = {
     chips: [],
     marker: null,
     init(){
-        const chip_material = new THREE.MeshStandardMaterial({
-            color: 0xFFFFFF,
-            flatShading: true,
-            metalness:0.5,
-            roughness:0.5,
-        });
+        const s = df.model.height/color_bar.subdivisions;
 
         for(let i = 0; i <= color_bar.subdivisions; i++){
-            const s = df.model.height/color_bar.subdivisions;
             const chip_geometry = new THREE.BoxGeometry(s,s,s);
             const chip = new THREE.Mesh(chip_geometry, static_material.clone());
-
             const n_color = color_gradient.get((i*s)/df.model.height);
-
             utilityColor.fromArray(n_color);
-
             chip.material.color.setHex('0x'+utilityColor.getHexString());
             chip.material.color.needsUpdate = true;
             chip.position.setY(i*s);
             color_bar.object.add(chip);
         }
 
-        color_bar.object.position.set(10,0,5);
+        color_bar.object.position.set(10+(s/2),0,5+(s/-2));
         model.add(color_bar.object);
 
-        const s = df.model.height/color_bar.subdivisions;
         const chip_geometry = new THREE.BoxGeometry(s*2,s/2,s*2);
         color_bar.marker = new THREE.Mesh(chip_geometry, static_material.clone());
         color_bar.marker.material.color.setHex('0xFF0000');
         color_bar.object.add(color_bar.marker);
+    }
+}
+
+const prog_bar = {
+    subdivisions: null,
+    object: new THREE.Group(),
+    marker_object: new THREE.Group(),
+    chips: [],
+    marker: null,
+    running_max_values: [],
+    running_max: 1.0,
+    min_label: null,
+    max_label: null,
+    label_offset: [0.0,0.0,14.0],
+    instance: null,
+    element:{
+        base_ht: 1.0
+    },
+    vertices:{
+        position: null,
+        scale: null,
+        color: null,
+        matrix: new THREE.Matrix4(),
+        dummy: new THREE.Object3D()
+    },
+    viewed: 0,
+    init(){
+        //console.log(prog_bar.subdivisions, 'prog_bar.subdivisions');
+
+        vc.a.fromArray(prog_bar.label_offset);
+        prog_bar.min_label = labels.render(null, null, vc.a, 'I', 'min', false, 'up');
+        prog_bar.max_label = labels.render(null, null, vc.a, 'I', 'max', false, 'up');
+
+        prog_bar.vertices.position = new Float32Array(prog_bar.subdivisions*3);
+        prog_bar.vertices.position.fill(0.0);
+        prog_bar.vertices.scale = new Float32Array(prog_bar.subdivisions);
+        prog_bar.vertices.scale.fill(1.0);
+        prog_bar.vertices.color = new Float32Array(prog_bar.subdivisions*3);
+        prog_bar.vertices.color.fill(0.125);
+
+        const s = 20.0/(prog_bar.subdivisions-1);
+        const chip_geometry = new THREE.BoxGeometry(s*0.9,0.5,0.5);
+        chip_geometry.translate(0.0,0.25,0.0);
+
+        prog_bar.instance = new THREE.InstancedMesh(chip_geometry, static_material, prog_bar.subdivisions);
+        prog_bar.instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        prog_bar.instance.instanceColor = new THREE.InstancedBufferAttribute(prog_bar.vertices.color, 3, false, 1);
+        prog_bar.instance.instanceColor.setUsage(THREE.DynamicDrawUsage);
+
+
+        for(let i = 0; i < prog_bar.subdivisions; i++){
+            prog_bar.vertices.position[i*3] = i*s;
+            prog_bar.vertices.dummy.position.fromArray(array_at_index(prog_bar.vertices.position,i));
+            prog_bar.vertices.dummy.scale.setScalar(prog_bar.vertices.scale[i]);
+            prog_bar.vertices.dummy.updateMatrix();
+            prog_bar.instance.setMatrixAt(i, prog_bar.vertices.dummy.matrix);
+        }
+
+        prog_bar.instance.instanceMatrix.needsUpdate = true;
+        prog_bar.instance.instanceColor.needsUpdate = true;
+        prog_bar.instance.position.set(-10,0,8);
+        prog_bar.instance.name = 'prog_bar';
+
+        model.add(prog_bar.instance);
+
+        const marker_geometry = new THREE.BoxGeometry(s*0.75,0.5,0.7);
+        marker_geometry.translate(0.0,0.25,0.0);
+        prog_bar.marker = new THREE.Mesh(marker_geometry, static_material.clone());
+        prog_bar.marker.material.color.setHex('0xFF0000');
+        prog_bar.marker.name = 'marker';
+        prog_bar.marker_object.add(prog_bar.marker);
+        prog_bar.marker_object.position.set(-10,0,8);
+
+        model.add(prog_bar.marker_object);
+    },
+    update(){
+        //if(!load_queue.is_complete){
+        if(prog_bar.viewed < prog_bar.subdivisions){
+            const cmax = Math.max(...df.model.running_maximums.slice(0,prog_bar.viewed));
+            const cmin = Math.min(...df.model.running_maximums.slice(0,prog_bar.viewed));
+
+            for(let i = 0; i < prog_bar.subdivisions; i++){
+                if(i <= load_queue.index && i > prog_bar.viewed){
+                    set_array_at_index(prog_bar.vertices.color, i, [0.25,0.25,0.25]);
+                }else if(i <= df.model.data_index){
+                    prog_bar.viewed = Math.max(prog_bar.viewed, df.model.data_index);
+                    const mx = df.model.running_maximums[i];
+                    const cx = mx / df.model.data_max;
+
+                    set_array_at_index(prog_bar.vertices.color, i, color_gradient.get(cx));
+                    const norm = (mx - cmin) / (cmax - cmin);
+                    prog_bar.vertices.scale[i] = norm;
+
+                    if(!isNaN(norm)){
+                        prog_bar.vertices.matrix.identity();
+                        const pos = array_at_index(prog_bar.vertices.position, i);
+                        prog_bar.vertices.matrix.makeTranslation(...pos);
+                        vc.c.set(1.0, prog_bar.element.base_ht+norm, 1.0);
+                        prog_bar.vertices.matrix.scale(vc.c);
+                        prog_bar.instance.setMatrixAt(i, prog_bar.vertices.matrix);
+
+                        if (Math.round(mx * 100.0) === Math.round(cmin * 100.0)) {
+                            vc.d.set(...pos);
+                            vc.a.fromArray(prog_bar.label_offset).add(vc.d);
+                            prog_bar.min_label.text = 'MIN ' + mx.toFixed(1);
+                            prog_bar.min_label.line_height = 24;
+                            prog_bar.min_label.update();
+                            prog_bar.min_label.object.position.lerp(vc.a, 1.0);
+                        }
+
+                        if (Math.round(mx * 100.0) === Math.round(cmax * 100.0)) {
+                            vc.d.set(...pos);
+                            vc.a.fromArray(prog_bar.label_offset).add(vc.d);
+                            prog_bar.max_label.text = 'MAX ' + mx.toFixed(1);
+                            prog_bar.max_label.line_height = 24;
+                            prog_bar.max_label.update();
+                            prog_bar.max_label.object.position.lerp(vc.a, 1.0);
+                        }
+                    }
+                }
+            }
+            prog_bar.instance.instanceMatrix.needsUpdate = true;
+            prog_bar.instance.instanceColor.needsUpdate = true;
+        }
+
+    },
+    update_index(){
+        //return;
+        const t = (df.model.data_index/(load_queue.manifest_data.length-1)) * 20.0;
+        const m_scale = prog_bar.vertices.scale[df.model.data_index];
+        vc.c.set(1.0, prog_bar.element.base_ht+(m_scale)+0.4, 1.0);
+        prog_bar.marker.scale.copy(vc.c);
+        prog_bar.marker.position.set(t, -0.1, 0.0);
     }
 }
 
@@ -645,7 +933,8 @@ const gauss = {
 
 const color_gradient = {
     c_arr:[[0,0,1],[0.5,0,0],[1,1,0],[0,1,1],[1,1,1]],
-    get(pos){
+    get(pos_n){
+        const pos = Math.min(1.0, pos_n);
         const L = color_gradient.c_arr.length-1;
         const i = Math.floor(pos*(L));
         const b = 1.0-((pos*(L))-i);
@@ -658,60 +947,105 @@ const color_gradient = {
     }
 }
 
-const px_trace = {
-    memory: null,
-    watch: null,
-    texture: null,
-    canvas: document.createElement('canvas'),
-    line_height: 16,
-    get_text(){
+const plane_text = (line_height, style, resolution, names='show-names') => {
+
+    function get_text(){
         const lines = [];
-        px_trace.watch.map(o =>{
-            Object.entries(o).map(v => {
-                if(typeof(v[1]) === 'number'){
-                    lines.push(`${v[0]}:${v[1]===null ? 'null' : v[1].toFixed(2)}`);
-                }else{
-                    lines.push(`${v[0]}:${v[1]}`);
-                }
-            });
-            lines.push('break');
+        P.watch.map(o =>{
+            if(o.hasOwnProperty('formatted')){
+                o.lines.map(l =>{
+                    lines.push(l);
+                });
+            } else {
+                Object.entries(o).map(v => {
+                    let str = P.names === 'show-names' ? `${v[0]}:` : '';
+                    if (typeof (v[1]) === 'number') {
+                        str += `${v[1] === null ? 'null' : v[1].toFixed(2)}`;
+                    } else {
+                        str += `${v[1]}`;
+                    }
+                    lines.push({text: str});
+                });
+            }
+            lines.push({text:'break'});
         })
         return lines;
-    },
-    init(){
-        const g = px_trace.canvas.getContext('2d');
-        px_trace.canvas.width = 1024;
-        px_trace.canvas.height = 1024;
+    }
+
+    function init(){
+        const g = P.canvas.getContext('2d');
+        P.canvas.width = resolution;
+        P.canvas.height = resolution;
         g.fillStyle = '#000000';
-        g.fillRect(0, 0, px_trace.canvas.width, px_trace.canvas.height);
-        px_trace.texture = new THREE.Texture(px_trace.canvas);
-    },
-    trace(text=null){
-        const lines = px_trace.get_text();
-        const ref = lines.join('-');
-        if(ref === px_trace.memory) return;
+        g.fillRect(0, 0, P.canvas.width, P.canvas.height);
+        P.texture = new THREE.Texture(P.canvas);
+
+        const s_geometry = new THREE.PlaneGeometry(vars.view.scene_width, vars.view.scene_width);
+        const s_material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            map: P.texture,
+            blending: THREE.AdditiveBlending,
+            depthTest: true,
+            depthWrite: false
+        });
+
+        P.plane_object = new THREE.Mesh(s_geometry, s_material);
+
+    }
+
+    function trace(){
+        const lines = P.get_text();
+        const ref = lines.map(l=>l.text).join('-');
+        if(ref === P.memory) return;
 
         //make bitmap
-        const g = px_trace.canvas.getContext('2d');
-        g.font = `${px_trace.line_height}px Helvetica`;
+        const g = P.canvas.getContext('2d');
+
         g.fillStyle = '#000000';
-        g.fillRect(0, 0, px_trace.canvas.width, px_trace.canvas.height);
+        g.fillRect(0, 0, P.canvas.width, P.canvas.height);
         g.fillStyle = 'white';
+        let y_pos = 0;
+
 
         lines.map((L,n) => {
-            const l_start = px_trace.canvas.height-(lines.length*px_trace.line_height);
-            if(L==='break'){
+            const l_height = L.size ? L.size : P.line_height;
+            g.font = `${l_height}px Helvetica`;
+            g.textAlign = L.align ? L.align : 'left';
+            const asc = g.measureText(L.text).fontBoundingBoxAscent;
+            const hgt = g.measureText(L.text).fontBoundingBoxDescent;
+
+            y_pos += asc+hgt;//l_height;
+            const l_start = P.style === 'bottom-up' ? P.canvas.height-(lines.length*l_height) : 0.0;
+            g.fillStyle = L.color ? L.color : 'white';
+            if(L.text === 'break'){
                 if(n !== lines.length-1){
-                    g.fillRect(0, l_start+(px_trace.line_height*(n+1)), px_trace.canvas.width, 2.0);//-(px_trace.line_height/2.0)
+                    g.fillRect(0, l_start+(y_pos), P.canvas.width, 2.0);
                 }
             }else{
-                g.fillText(L, 0, l_start+(px_trace.line_height*(n+1)));
+                g.fillText(L.text, g.textAlign === 'left' ? 0.0 : P.canvas.width , l_start+(y_pos-hgt));
             }
         });
 
-        px_trace.texture.needsUpdate = true;
-        px_trace.memory = lines.join('-');
+        P.texture.needsUpdate = true;
+        P.memory = ref;
     }
+
+    const P = {
+        plane_object: null,
+        memory: null,
+        watch: null,
+        texture: null,
+        canvas: document.createElement('canvas'),
+        line_height: line_height,
+        style: style,
+        names:names,
+        get_text,
+        init,
+        trace
+    }
+
+    return P;
 }
 
 const df = {
@@ -958,13 +1292,13 @@ const df = {
         df.box_helper = new THREE.Box3Helper(df.box, 0x666666);
         df.bounds_box_helper = new THREE.Box3Helper(df.bounds_box, 0x666600);
         df.model.object.add(df.box_helper);
-        //df.model.world_bounds.add(df.bounds_box_helper);
         df.model.object.add(df.model.data);
         model.add(df.model.object);
         model.add(df.model.world_bounds);
         df.update_map(df.shape[1], df.shape[0]);
-
         color_bar.init();
+        prog_bar.init();
+
     },
     update_map(w,h){
         vc.a.set(0,0,0);
@@ -992,73 +1326,77 @@ const df = {
             z: vars.view.scene_width/4.0
         }
     },
-    //#//demoted
-    /*
-    make_map(){
-        df.cells = df.shape[0]*df.shape[1];
-        df.pos = new Float32Array(df.cells*3);
+    update_frame(){
+        //if(df.model.data_set.length === 0) return;
 
-        df.max = Math.max(...df.data[0].raw.data);
-        df.avg = average(df.data[0].raw.data);
+        const n = df.model.running_maximums[df.model.data_index];
 
-        console.log("df.max",df.max,"df.avg",df.avg);
+        color_bar.marker.position.set(0.0, n*(df.model.height/df.model.data_max), 0.0);
 
-        const box = new THREE.Box3();
-        vc.a.set(0,0,0);
-        vc.b.set(df.shape[1], df.max*df.y_scale, df.shape[0]);
-        box.set(vc.a, vc.b);
+        if(prog_bar.running_max_values.length === 0) prog_bar.running_max_values.push(n);
 
-        const helper = new THREE.Box3Helper( box, 0xffff00 );
-        df.vertices.object.add( helper );
+        prog_bar.update();
 
-        const x_scale = 1.0;//vars.view.scene_width/360.0;
-        const z_scale = vars.view.scene_width/180.0;
+        prog_bar.update_index();
 
-        df.vertices.object.scale.set(x_scale,0.5,z_scale);
-        df.vertices.object.position.set(vars.view.scene_width/-2, 0.0, vars.view.scene_width/-4);
-        model.add(df.vertices.object);
 
-        //
-        let qz = 0;
-        for(let lon = 0; lon<df.shape[0]; lon++){
-            for(let lat = 0; lat<df.shape[1]; lat++){
-                // df.pos[qz*3] = lat;//*df.shape_map[1];
-                // df.pos[qz*3+1] = df.shape[0]-lon;//(-lon*df.shape_map[0])+180.0;
-                // df.pos[qz*3+2] = df.data[0].raw.data[qz];
-                df.data_grid.push([lon,lat,df.data[0].raw.data[qz]]);
-                qz++;
-            }
+        if(df.model.data_set_meta.length>0){
+            const date_fmt = get_t_from_dateStamp(df.model.data_set_meta[df.model.data_index].id);
+            df.date_trace.lines = [
+                {text:date_fmt.d, color:'#666666', size:24, align:'right'},
+                {text:date_fmt.t, color:'#666666', size:72, align:'right'},
+                {text:date_fmt.z, color:'#666666', size:12, align:'right'},
+            ]
         }
-        //
-        // df.make_sectors();
-        // df.contours();
-        // df.draw();
+
+        if(load_queue.is_complete){
+            load_queue.info.progress = `${df.model.data_index+1}/${load_queue.manifest_data.length}`;
+        }
+
+        load_queue.load_trace.lines = [
+            {text: load_queue.info.status, color: '#666666', size: 24, align: 'left'},
+            {text: load_queue.info.progress, color: '#666666', size: 48, align: 'left'},
+            {text: load_queue.is_complete ? '' : load_queue.info.url, color: '#666666', size: 12, align: 'left'}
+        ]
+
+
     },
-    */
     update_vertices(){
-        const z_values = [];
+        if(!df.model.data_set.length) return;
+        // df.pos = df.model.data_set[df.model.data_index];
+        // if(!df.pos) return;
 
         for (let n = 0; n < df.cells; n++) {
+            //
+            // df.vertices.matrix.identity();
+            // const pos = array_at_index(df.pos, n);
+            // const x = pos[0] = df.plane_offset;
+            // const dy = pos[2] / df.model.data_max;
+            // const z = pos[1] - df.plane_offset;
+            //
+            // prog_bar.vertices.matrix.makeTranslation(x,0.0,z);
+            // vc.c.set(1.0, prog_bar.element.base_ht+norm, 1.0);
+            // prog_bar.vertices.matrix.scale(vc.c);
+            // prog_bar.instance.setMatrixAt(i, prog_bar.vertices.matrix);
 
             df.vertices.instance.getMatrixAt(n, df.vertices.matrix);
             vc.a.setFromMatrixPosition(df.vertices.matrix);
             vc.c.setFromMatrixScale(df.vertices.matrix);
 
             const x = df.pos[n * 3] + df.plane_offset;
-            const y = 0.0;
-            const dy = df.pos[n * 3 + 2] / df.model.data_max;// * (df.model.height/df.model.data_max);
+            const dy = df.pos[n * 3 + 2] / df.model.data_max;
             const z = df.pos[n * 3 + 1] - df.plane_offset;
 
-            vc.b.set(x,y,z);
-            vc.a.lerp(vc.b, 0.01);
+            vc.b.set(x,0.0,z);
+            vc.a.lerp(vc.b, df.animation_lerp_amt);
 
             vc.b.set(1.0,dy,1.0);
-            vc.c.lerp(vc.b, 0.01);
+            vc.c.lerp(vc.b, df.animation_lerp_amt);
 
             instance_dummy.position.copy(vc.a);
             instance_dummy.scale.copy(vc.c);
-
             instance_dummy.updateMatrix();
+            df.vertices.instance.setMatrixAt(n, instance_dummy.matrix);
             //
             // df.vertices.instance.getMatrixAt(n, df.vertices.matrix);
             // vc.a.setFromMatrixScale(df.vertices.matrix);
@@ -1088,24 +1426,18 @@ const df = {
             // df.vertices.matrix.makeTranslation(vc.c.x, vc.c.y, vc.c.z);
             // df.vertices.instance.setMatrixAt(n, df.vertices.matrix);
 
-            df.vertices.instance.setMatrixAt(n, instance_dummy.matrix);
+
 
             const z_col = vc.c.y < 1 ? vc.c.y : 1.0;
-            if(!isNaN(vc.c.y)) z_values.push(vc.c.y);
             const rmc = color_gradient.get(z_col);
-
             df.vertices.color[n * 3] = rmc[0];
             df.vertices.color[n * 3+1] = rmc[1];
             df.vertices.color[n * 3+2] = rmc[2];
         }
 
-        const n = Math.max(...z_values) * df.model.height;
-        df.trace.dmax = n;
-        color_bar.marker.position.set(0.0, n, 0.0);
-
-
         df.vertices.instance.instanceMatrix.needsUpdate = true;
         df.vertices.instance.instanceColor.needsUpdate = true;
+
     },
     make_vertices(){
         const lon_size = Math.pow(2, df.up_res_iterations) * df.shape[1];
@@ -1146,7 +1478,7 @@ const df = {
         });
         */
 
-        df.vertices.color = new Float32Array(df.cells*4);
+        df.vertices.color = new Float32Array(df.cells*3);
         df.vertices.color.fill(1.0);
 
         const p_geometry = new THREE.BoxGeometry(1, df.model.height, 1);
@@ -1172,16 +1504,16 @@ const df = {
         }
         df.update_map(lon_size, df.shape[0]);
     },
-    read_vertices(){
+    read_vertices(DATA =null){
         const grid = new Array(df.shape[1]);
         df.cells = grid.length*df.shape[0];
-        df.pos = new Float32Array(df.cells*3);
-        df.pos.fill(0.0);
+        df.d_pos = new Float32Array(df.cells*3);
+        df.d_pos.fill(0.0);
 
         function set_pos(i,j,index,grid){
-            df.pos[index*3] = i;
-            df.pos[index*3+1] = grid[0].length-j;
-            df.pos[index*3+2] = grid[i][j];
+            df.d_pos[index*3] = i;
+            df.d_pos[index*3+1] = grid[0].length-j;
+            df.d_pos[index*3+2] = grid[i][j];
         }
 
         function init_grid(){
@@ -1189,7 +1521,7 @@ const df = {
             for (let i=0;i<df.shape[1];i++){
                 grid[i] = new Array(df.shape[0]);
                 for (let j=0;j<df.shape[0];j++) {
-                    grid[i][j] = df.data[0].raw.data[j*df.shape[1]+i];
+                    grid[i][j] = DATA.raw.data[j*df.shape[1]+i];
                     set_pos(i,j,index,grid);
                     index++;
                 }
@@ -1207,7 +1539,7 @@ const df = {
             grid_temp.push(grid_temp[0]);
 
             df.cells = grid_temp.length*grid_temp[0].length;
-            df.pos = new Float32Array(df.cells*3);
+            df.d_pos = new Float32Array(df.cells*3);
 
             let index = 0;
             for (let i=0;i<grid_temp.length;i++){
@@ -1225,8 +1557,6 @@ const df = {
             return grid_temp;
         }
 
-
-
         init_grid();
         let d_grid = grid;
         for(let n=0; n < (df.up_res_iterations); n++){
@@ -1235,12 +1565,22 @@ const df = {
 
         if(df.filter.active){
             const filter_obj = gauss.filter(d_grid, df.filter.sigma);
-            for (let i=0;i<df.cells;i++) df.pos[i*3+2] = filter_obj.data[i];
+            for (let i=0;i<df.cells;i++) df.d_pos[i*3+2] = filter_obj.data[i];
         }
 
         df.update_map(d_grid.length, d_grid[0].length);
 
-        df.model.data_set.push(df.pos);
+        df.model.data_set.push(df.d_pos);
+
+        const data_max = Math.max(...DATA.raw.data);
+
+        //console.log(DATA.id, data_max);
+
+        DATA.max_value = data_max;
+
+        df.model.data_set_meta.push(DATA);
+
+        df.model.running_maximums.push(data_max);
 
     },
     model:{
@@ -1248,9 +1588,13 @@ const df = {
         object: new THREE.Group(),
         data: new THREE.Group(),
         height: 5,
-        data_max: 150,
-        data_set:[]
+        data_max: 125,
+        data_set:[], /// all df.pos elements
+        data_set_meta: [],
+        running_maximums: [],
+        data_index: 0
     },
+    animation_lerp_amt: vars.animator.value_lerp,
     filter:{
         active: true,
         sigma: 1.5
@@ -1259,6 +1603,10 @@ const df = {
     box: new THREE.Box3(),
     bounds_box: new THREE.Box3(),
     trace:{},
+    date_trace:{
+        formatted:true,
+        lines: []
+    },
     data: [],
     data_last: [],
     data_set: [],
@@ -1281,34 +1629,78 @@ const df = {
 const animator = {
     frame:0,
     frame_max:0,
+    get_frame(pos, manual=false){
+
+
+        if(manual === true){
+            vars.animator.animating = false;
+            if(pos > animator.frame_max-1){
+                animator.frame = animator.frame_max-1;
+            }else{
+                animator.frame = pos;
+            }
+            //onsole.log(df.model.data_set_meta[df.model.data_index]);
+        }else{
+            animator.frame = animator.frame + pos;
+        }
+
+        if(animator.frame > animator.frame_max-1) animator.frame = 0;
+        if(animator.frame < 0) animator.frame = animator.frame_max-1;
+
+        df.model.data_index = animator.frame;
+        df.pos = df.model.data_set[df.model.data_index];
+    },
     animate(){
-        load_queue.trace.frame = animator.frame;
-        df.pos = df.model.data_set[animator.frame];
-        //for contours draw:
-        //df.model.data.children.map((c,i) => c.visible = i===animator.frame);
-        animator.frame = animator.frame < animator.frame_max-1 ? animator.frame+1 : 0;
-        load_queue.trace.current = animator.frame;
+        animator.frame_max = df.model.data_set.length;
+        if(vars.animator.animating) {
+            if(load_queue.is_complete){
+                animator.get_frame(1);
+            }else{
+                if(animator.frame < animator.frame_max-1){
+                    animator.get_frame(1);
+                }
+            }
+        }
 
-
-
-        setTimeout(animator.animate, 100);
+        df.update_frame();
+        setTimeout(animator.animate, vars.animator.rate);
     }
 }
 
+
+function g_dd(t){
+    const dt = get_t_from_dateStamp(t);
+
+    //console.log(t, dt.dd, ts);
+    return dt;
+}
+
+
 const load_queue = {
     mode:'ANIMATE',///'ANIMATE', //'STATIC',
+    is_complete: false,
     index: 0,
     manifest_data: null,
-    queue_legnth: 0,
+    queue_length: 0,
     prg: 0,
     trace:{
         status:null,
         item: null,
         frame:null
     },
+    load_trace:{
+        formatted:true,
+        lines: []
+    },
+    info:{
+        status:null,
+        progress:'what?',
+        url:null
+    },
 
-    async crawl(){
-        df.read_vertices();
+    async crawl(meta_data){
+        //console.log(meta_data);
+        df.read_vertices(meta_data);
         return true;
     },
 
@@ -1318,94 +1710,87 @@ const load_queue = {
         load_queue.trace.item = obj.url;
         if(load_queue.prg === 0){
             load_queue.trace[obj.cat] += (' loaded');
-            load_queue.trace.status = 'complete';
         }
     },
 
-    complete(res, obj_item){
+    complete(res, obj_item, index=null){
         if(obj_item === 'manifest'){
+            load_queue.info.status = 'loaded manifest';
             const r = res[0].raw.data;
             load_queue.manifest_data = r.map(obj_str => {
                 const id = obj_str.split('.')[0];
                 return {url:vars.assets_path+obj_str, type:'json', cat:'assets', id:id}
             })
-            //load_queue.manifest_data.splice(2,load_queue.manifest_data.length);
-            load_queue.trace.result = load_queue.manifest_data.length+' items in queue';
-            if(load_queue.mode === 'ANIMATE') load_queue.manifest_data.reverse();
-            //load_queue.assets();
+
+
+            //load_queue.manifest_data.sort((a, b) => (g_dd(a.id).dd.valueOf()) > (g_dd(b.id).dd.valueOf()) ? 1 : -1);
+
+            // load_queue.manifest_data.splice(80, load_queue.manifest_data.length);
+            //
+            load_queue.manifest_data.reverse();
+
+            prog_bar.subdivisions = load_queue.manifest_data.length;
+            //load_queue.trace.result = load_queue.manifest_data.length+' items in queue';
+            //load_queue.manifest_data.reverse();
+
             df.init_map();
             df.make_vertices();
             labels.make_label_object(null);
-            // console.log(res);
-
-            load_queue.trace.pure_shit = res[0].name;
-
-            load_queue.asset(load_queue.index);
+            load_queue.asset(0); //#// loads asset zero (0)
+            //load_queue.index++;
         }
 
         if(obj_item === 'asset'){
-            df.data_set.push(...res);
-            df.data = [...res];
-
-            load_queue.trace.index = load_queue.index;
+            // console.log('asset', index);
+            // //df.data_set.push(...res);
+            // //df.data = [...res];
+            // //console.log(res[0]);
+            // load_queue.trace.index = load_queue.index;
+            // console.log(res[0].id, g_dd(res[0].id).dd.toUTCString(), '->', g_dd(res[0].id).df.toString());
 
             if(load_queue.mode === 'ANIMATE') {
 
-                load_queue.crawl().then(c_res => {
-                    load_queue.index++;
+                load_queue.crawl(res[0]).then(c_res => {
+                    load_queue.index = index;
+                    load_queue.info.progress = `${load_queue.index+1}/${load_queue.manifest_data.length}`;
 
-                    if (load_queue.index < load_queue.manifest_data.length) {
-                        load_queue.asset(load_queue.index);
+                    if(index === 0 && vars.animator.animating) animator.animate();
+
+                    if (index < load_queue.manifest_data.length-1) {
+                        load_queue.asset(index+1);
                     } else {
-                        animator.frame = 0;
-                        animator.frame_max = load_queue.manifest_data.length;
-
-                        //load_queue.trace.k =
-
-                        animator.animate();
+                        load_queue.info.status = `Completed ${load_queue.manifest_data.length} data assets.`;
+                        load_queue.is_complete = true;
+                        //df.update_frame();
                     }
                 });
-
             }
-
-            if(load_queue.mode === 'STATIC') {
-
-
-            }
-
-
-
         }
 
         if(obj_item === 'assets'){
-
-            // df.data = [...res];
-            // console.log(df.data);
-            // df.data.map((d,i) => {
-            //     df.contours(i);
-            // });
-
+            //unused
         }
     },
 
     manifest(){
         const queue = [{url:vars.manifest_path, type:'json', cat:'manifest'}];
         load_queue.queue_legnth = queue.length;
-        load_queue.trace.status = 'loading manifest';
+        load_queue.info.status = 'loading manifest';
         loader(queue, load_queue.status).then(r => load_queue.complete(r,'manifest'));
     },
 
     asset(index){
         const queue = [load_queue.manifest_data[index]];
         load_queue.queue_legnth = queue.length;
-        load_queue.trace.status = 'loading assets';
-        loader(queue, load_queue.status).then(r => load_queue.complete(r,'asset'));
+        load_queue.info.status = 'loading asset';
+        load_queue.info.url = queue[0].url;
+        loader(queue, load_queue.status).then(r => load_queue.complete(r,'asset',index));
     },
 
     assets(){
         const queue = load_queue.manifest_data;
         load_queue.queue_legnth = queue.length;
-        load_queue.trace.status = 'loading assets';
+        load_queue.info.status = 'loading assets';
         loader(queue, load_queue.status).then(r => load_queue.complete(r,'assets'));
     }
 
@@ -1472,21 +1857,33 @@ function post_init(){
         model.add(r_root_plane);
     }
 
-    px_trace.init();
+    debug_trace = plane_text(16, 'bottom-up', 2048, 'show-names');
+    debug_trace.init();
+    debug_trace.watch = [vars.debug, vars.fps, vars.evt, vars.user.mouse.plane_pos, model.position, load_queue.trace, df.trace];
+    debug_trace.plane_object.position.set(0,vars.view.scene_width/2,5.001);
 
-    const s_geometry = new THREE.PlaneGeometry(vars.view.scene_width, vars.view.scene_width);
-    s_geometry.translate(0.0, vars.view.scene_width/2.0, (vars.view.scene_width/-2)-0.5);
-    const s_material = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        map: px_trace.texture,
-        blending: THREE.AdditiveBlending,
-        depthTest: true,
-        depthWrite: true
-    });
 
-    trace_root_plane = new THREE.Mesh(s_geometry, s_material);
-    model.add(trace_root_plane);
+    date_trace = plane_text(24, 'top-down', 1024, 'no-names');
+    date_trace.init();
+    date_trace.watch = [df.date_trace];
+    date_trace.plane_object.position.set(0,0,20);
+    date_trace.plane_object.rotateX(Math.PI/-2);
+
+
+    load_trace = plane_text(12, 'top-down', 1024, 'show-names');
+    load_trace.init();
+    load_trace.watch = [load_queue.load_trace];
+    load_trace.plane_object.position.set(0,0,20);
+    load_trace.plane_object.rotateX(Math.PI/-2);
+
+    model.add(debug_trace.plane_object);
+    model.add(date_trace.plane_object);
+    model.add(load_trace.plane_object);
+
+    const default_z = 20.0;
+    const visible_dimensions = visibleAtZDepth(-default_z, cam.camera);
+    cam.base_pos.z = ((default_z / visible_dimensions.w) * vars.view.scene_width) + 12.0;
+    console.log(visible_dimensions);
     scene.add(model);
 }
 
@@ -1513,8 +1910,11 @@ function init(){
     vars.evt = {};
     vars.evt.action = null;
 
-    dragControls(renderer.domElement, vars.evt_input.screen, vars.evt_cb);
-    keyControls(window, vars.evt_input.key, vars.evt_cb);
+    // dragControls(renderer.domElement, vars.evt_input.screen, vars.evt_cb);
+    // keyControls(window, vars.evt_input.key, vars.evt_cb);
+
+    // dragControls(renderer.domElement, vars.evt_cb, vars.evt_input);
+    // keyControls(window, vars.evt_cb, vars.evt_input);
 
     const light = new THREE.PointLight(0xffffff, 1);
     light.position.set(0, vars.view.scene_width * 2, 0);
@@ -1533,7 +1933,7 @@ function init(){
 
     cam.run();
 
-    px_trace.watch = [vars.fps, vars.evt, vars.user.mouse.plane_pos, model.position, load_queue.trace, df.trace];
+
 }
 
 function render(a) {
@@ -1549,8 +1949,10 @@ function render(a) {
 
     if(df.vertices.instance) df.update_vertices();
 
-    if(vars.trace){
-        px_trace.trace(a+' ok');
+    date_trace.trace(a+' ok');
+    load_trace.trace(a+' ok');
+    if(vars.debug_trace){
+        debug_trace.trace(a+' ok');
     }
     renderer.render(scene, cam.camera);
 }
@@ -1560,7 +1962,10 @@ function animate(f) {
     render(f);
 }
 
-init();
-animate(null);
+// init();
+// animate(null);
+
+
+
 
 load_queue.manifest();
