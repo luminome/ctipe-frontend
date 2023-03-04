@@ -8,6 +8,7 @@ import elements from './three-sac/ui-three-elements.js';
 import * as util from './three-sac/ui-util.js';
 import config from './config.js';
 import package_detail from '../../package.json';
+import {norm_val} from "./three-sac/ui-util.js";
 
 const dom_target = document.getElementById('module-window');
 
@@ -190,6 +191,9 @@ const get_t_from_dateStamp = (t) => {
 const labels = {
     init: false,
     all: [],
+    groups: {
+        y: [],
+    },
     axes:{
         x:[],
         y:[],
@@ -208,7 +212,7 @@ const labels = {
             L.canvas.height = 256;
             g.fillStyle = '#000000';
             g.fillRect(0, 0, L.canvas.width, L.canvas.height);
-            g.font = `${L.line_height}px Helvetica`;
+            g.font = `${L.line_height}px heavy_data`;
             g.fillStyle = 'white';
 
             const wid = g.measureText(L.text).width;
@@ -339,6 +343,7 @@ const labels = {
 
     render(axis, interval, origin, tick, is_range, do_look=true, faces=null){
         if(is_range === true) {
+            labels.groups[axis] = [];
             for (let n = labels.bounds[axis][0]; n <= labels.bounds[axis][1]; n += interval) {
                 const label = labels.label(n, tick);
                 label.init();
@@ -348,6 +353,9 @@ const labels = {
                 label.object.position.copy(origin);
                 label.object.position[axis] = interval_n / interval_scale;
                 labels.object.add(label.object);
+
+                labels.groups[axis].push(label);
+
                 labels.all.push(label);
             }
         }else{
@@ -399,6 +407,8 @@ const labels = {
         df.model.world_bounds.add(labels.object);
 
         labels.init = true;
+
+        console.log(labels.groups);
     },
 }
 
@@ -466,7 +476,7 @@ const plane_text = (line_height, style, resolution, names='show-names') => {
 
         lines.map((L,n) => {
             const l_height = L.size ? L.size : P.line_height;
-            g.font = `${l_height}px Helvetica`;
+            g.font = `${l_height}px heavy_data`;
             g.textAlign = L.align ? L.align : 'left';
             const asc = g.measureText(L.text).fontBoundingBoxAscent;
             const hgt = g.measureText(L.text).fontBoundingBoxDescent;
@@ -507,15 +517,20 @@ const plane_text = (line_height, style, resolution, names='show-names') => {
 const color_gradient = {
     c_arr:[[0,0,1],[0.5,0,0],[1,1,0],[0,1,1],[1,1,1]],
     get(pos_n){
+        //console.log(pos_n);
         const pos = Math.min(1.0, pos_n);
         const L = color_gradient.c_arr.length-1;
         const i = Math.floor(pos*(L));
         const b = 1.0-((pos*(L))-i);
         const a = ((pos*(L))-i);
         const c = [0,0,0];
-        for(let r = 0; r < 3; r++){
-            c[r] = i === L ? color_gradient.c_arr[L][r] : (color_gradient.c_arr[i][r]*b + (color_gradient.c_arr[i+1][r]*a));
+        if(pos_n < 0){
+             return c;
         }
+        for (let r = 0; r < 3; r++) {
+            c[r] = i === L ? color_gradient.c_arr[L][r] : (color_gradient.c_arr[i][r] * b + (color_gradient.c_arr[i + 1][r] * a));
+        }
+
         return c;
     }
 }
@@ -534,7 +549,8 @@ const color_bar = {
     subdivisions: 20,
     object: new THREE.Group(),
     chips: [],
-    marker: null,
+    max_marker: null,
+    min_marker: null,
     init(){
         const s = df.model.height/color_bar.subdivisions;
 
@@ -553,9 +569,13 @@ const color_bar = {
         config.model.add(color_bar.object);
 
         const chip_geometry = new THREE.BoxGeometry(s*2,s/2,s*2);
-        color_bar.marker = new THREE.Mesh(chip_geometry, static_material.clone());
-        color_bar.marker.material.color.setHex('0xFF0000');
-        color_bar.object.add(color_bar.marker);
+        color_bar.max_marker = new THREE.Mesh(chip_geometry, static_material.clone());
+        color_bar.max_marker.material.color.setHex('0xFF0000');
+        color_bar.object.add(color_bar.max_marker);
+
+        color_bar.min_marker = new THREE.Mesh(chip_geometry, static_material.clone());
+        color_bar.min_marker.material.color.setHex('0xFF0000');
+        color_bar.object.add(color_bar.min_marker);
     }
 }
 
@@ -597,7 +617,7 @@ const prog_bar = {
         prog_bar.vertices.color.fill(0.125);
 
         const s = 20.0/(prog_bar.subdivisions-1);
-        const chip_geometry = new THREE.BoxGeometry(s*0.9,0.5,0.5);
+        const chip_geometry = new THREE.BoxGeometry(s, 0.5, 0.5);
         chip_geometry.translate(0.0,0.25,0.0);
 
         prog_bar.instance = new THREE.InstancedMesh(chip_geometry, static_material, prog_bar.subdivisions);
@@ -632,6 +652,11 @@ const prog_bar = {
     },
     update(){
         //if(!load_queue.is_complete){
+        const data_max = Math.max(...df.model.running_maximums);
+        const data_min = Math.min(...df.model.running_minimums);
+
+        //const data = df.model.data_set_meta[df.model.data_index];
+
         if(prog_bar.viewed < prog_bar.subdivisions){
             const cmax = Math.max(...df.model.running_maximums.slice(0,prog_bar.viewed));
             const cmin = Math.min(...df.model.running_maximums.slice(0,prog_bar.viewed));
@@ -641,18 +666,20 @@ const prog_bar = {
                     util.set_buffer_at_index(prog_bar.vertices.color, i, [0.25,0.25,0.25]);
                 }else if(i <= df.model.data_index){
                     prog_bar.viewed = Math.max(prog_bar.viewed, df.model.data_index);
+
                     const mx = df.model.running_maximums[i];
-                    const cx = mx / df.model.data_max;
+                    const cx = util.norm_val(mx, data_min, data_max);// mx / df.model.data_max;
 
                     util.set_buffer_at_index(prog_bar.vertices.color, i, color_gradient.get(cx));
+
                     const norm = (mx - cmin) / (cmax - cmin);
-                    prog_bar.vertices.scale[i] = norm;
+                    prog_bar.vertices.scale[i] = cx;
 
                     if(!isNaN(norm)){
                         prog_bar.vertices.matrix.identity();
                         const pos = util.get_buffer_at_index(prog_bar.vertices.position, i);
                         prog_bar.vertices.matrix.makeTranslation(...pos);
-                        vc.c.set(1.0, prog_bar.element.base_ht+norm, 1.0);
+                        vc.c.set(1.0, prog_bar.element.base_ht*(cx), 1.0);
                         prog_bar.vertices.matrix.scale(vc.c);
                         prog_bar.instance.setMatrixAt(i, prog_bar.vertices.matrix);
 
@@ -685,7 +712,7 @@ const prog_bar = {
         //return;
         const t = (df.model.data_index/(load_queue.manifest_data.length-1)) * 20.0;
         const m_scale = prog_bar.vertices.scale[df.model.data_index];
-        vc.c.set(1.0, prog_bar.element.base_ht+(m_scale)+0.4, 1.0);
+        vc.c.set(1.0, m_scale+0.4, 1.0);
         prog_bar.marker.scale.copy(vc.c);
         prog_bar.marker.position.set(t, -0.1, 0.0);
     }
@@ -971,10 +998,20 @@ const df = {
     },
     update_frame(){
         //if(df.model.data_set.length === 0) return;
+        const data_max = Math.max(...df.model.running_maximums);
+        // const data_min = Math.min(...df.model.running_minimums);
 
+        const data = df.model.data_set_meta[df.model.data_index];
         const n = df.model.running_maximums[df.model.data_index];
 
-        color_bar.marker.position.set(0.0, n*(df.model.height/df.model.data_max), 0.0);
+        //const max_norm = util.norm_val()
+        // vc.a.set(0.0, (data.max_value/data_max)*5, 0.0);
+        // color_bar.max_marker.position.lerp(vc.a, config.animator.marker_lerp);//(0.0, (data.max_value/data_max)*5, 0.0);
+        //color_bar.min_marker.position.set(0.0, 5/df.model.data_min, 0.0);
+        color_bar.max_marker.position.set(0.0, (data.max_value/data_max)*5, 0.0);
+        color_bar.min_marker.position.set(0.0, (data.min_value/data_max)*5, 0.0);
+
+
 
         if(prog_bar.running_max_values.length === 0) prog_bar.running_max_values.push(n);
 
@@ -985,10 +1022,15 @@ const df = {
 
         if(df.model.data_set_meta.length>0){
             const date_fmt = get_t_from_dateStamp(df.model.data_set_meta[df.model.data_index].id);
+
+            const dd = `${df.model.data_index+1}/${load_queue.manifest_data.length}`;
+            //};//new Date(df.model.data_set_meta[df.model.data_index].raw.ctime);
+
             df.date_trace.lines = [
                 {text:date_fmt.d, color:'#666666', size:24, align:'right'},
                 {text:date_fmt.t, color:'#666666', size:72, align:'right'},
                 {text:date_fmt.z, color:'#666666', size:12, align:'right'},
+                {text:dd, color:'#666666', size:24, align:'right'},
             ]
         }
 
@@ -1002,32 +1044,31 @@ const df = {
             {text: load_queue.is_complete ? '' : load_queue.info.url, color: '#666666', size: 12, align: 'left'}
         ]
 
+        const y_len = labels.groups.y.length;
+        //const data_max = Math.max(...df.model.running_maximums);
+        for(let l=0; l < y_len; l++){
+            const lv = (data_max/(y_len-1)) * l;
+            labels.groups.y[l].text = lv.toFixed(1);
+            labels.groups.y[l].update();
+        }
+
 
     },
     update_vertices(){
         if(!df.model.data_set.length) return;
-        // df.pos = df.model.data_set[df.model.data_index];
-        // if(!df.pos) return;
+        const data_max = Math.max(...df.model.running_maximums);
+        const data_min = Math.min(...df.model.running_minimums);
 
         for (let n = 0; n < df.cells; n++) {
-            //
-            // df.vertices.matrix.identity();
-            // const pos = array_at_index(df.pos, n);
-            // const x = pos[0] = df.plane_offset;
-            // const dy = pos[2] / df.model.data_max;
-            // const z = pos[1] - df.plane_offset;
-            //
-            // prog_bar.vertices.matrix.makeTranslation(x,0.0,z);
-            // vc.c.set(1.0, prog_bar.element.base_ht+norm, 1.0);
-            // prog_bar.vertices.matrix.scale(vc.c);
-            // prog_bar.instance.setMatrixAt(i, prog_bar.vertices.matrix);
 
             df.vertices.instance.getMatrixAt(n, df.vertices.matrix);
             vc.a.setFromMatrixPosition(df.vertices.matrix);
             vc.c.setFromMatrixScale(df.vertices.matrix);
 
+            const k_norm = util.norm_val(df.pos[n * 3 + 2], data_min, data_max);
+
             const x = df.pos[n * 3] + df.plane_offset;
-            const dy = df.pos[n * 3 + 2] / df.model.data_max;
+            const dy = k_norm;// / df.model.data_max;
             const z = df.pos[n * 3 + 1] - df.plane_offset;
 
             vc.b.set(x,0.0,z);
@@ -1069,10 +1110,9 @@ const df = {
             // df.vertices.matrix.makeTranslation(vc.c.x, vc.c.y, vc.c.z);
             // df.vertices.instance.setMatrixAt(n, df.vertices.matrix);
 
-
-
             const z_col = vc.c.y < 1 ? vc.c.y : 1.0;
             const rmc = color_gradient.get(z_col);
+
             df.vertices.color[n * 3] = rmc[0];
             df.vertices.color[n * 3+1] = rmc[1];
             df.vertices.color[n * 3+2] = rmc[2];
@@ -1148,6 +1188,8 @@ const df = {
         df.update_map(lon_size, df.shape[0]);
     },
     read_vertices(DATA =null){
+        //config.debug.slav = (DATA.raw.ctime);
+        //console.log(DATA);
         const grid = new Array(df.shape[1]);
         df.cells = grid.length*df.shape[0];
         df.d_pos = new Float32Array(df.cells*3);
@@ -1200,15 +1242,16 @@ const df = {
             return grid_temp;
         }
 
+
         init_grid();
         let d_grid = grid;
-        for(let n=0; n < (df.up_res_iterations); n++){
+        for (let n = 0; n < (df.up_res_iterations); n++) {
             d_grid = double_res(d_grid);
         }
 
-        if(df.filter.active){
+        if (df.filter.active) {
             const filter_obj = util.gauss.filter(d_grid, df.filter.sigma);
-            for (let i=0;i<df.cells;i++) df.d_pos[i*3+2] = filter_obj.data[i];
+            for (let i = 0; i < df.cells; i++) df.d_pos[i * 3 + 2] = filter_obj.data[i];
         }
 
         df.update_map(d_grid.length, d_grid[0].length);
@@ -1216,25 +1259,32 @@ const df = {
         df.model.data_set.push(df.d_pos);
 
         const data_max = Math.max(...DATA.raw.data);
+        const data_min = Math.min(...DATA.raw.data);
 
-        //console.log(DATA.id, data_max);
 
         DATA.max_value = data_max;
-
+        DATA.min_value = data_min;
+        df.model.limits.min = data_min;
+        df.model.limits.max = data_max;
         df.model.data_set_meta.push(DATA);
-
         df.model.running_maximums.push(data_max);
+        df.model.running_minimums.push(data_min);
 
     },
     model:{
         world_bounds: new THREE.Group(),
         object: new THREE.Group(),
         data: new THREE.Group(),
+        limits:{
+            max:0.0,
+            min:0.0
+        },
         height: 5,
-        data_max: 125,
+        data_max: 100,
         data_set:[], /// all df.pos elements
         data_set_meta: [],
         running_maximums: [],
+        running_minimums: [],
         data_index: 0
     },
     animation_lerp_amt: config.animator.value_lerp,
@@ -1242,7 +1292,7 @@ const df = {
         active: true,
         sigma: 1.5
     },
-    up_res_iterations: 3,
+    up_res_iterations: 2,
     box: new THREE.Box3(),
     bounds_box: new THREE.Box3(),
     trace:{},
@@ -1271,8 +1321,10 @@ const df = {
 
 const animator = {
     frame:0,
+    prev_frame:0,
     frame_max:0,
     get_frame(pos, manual=false){
+
         if(manual === true){
             config.animator.animating = false;
             if(pos > animator.frame_max-1){
@@ -1281,7 +1333,7 @@ const animator = {
                 animator.frame = pos;
             }
         }else{
-            animator.frame = animator.frame + pos;
+            animator.frame += pos;//animator.frame + pos;
         }
 
         if(animator.frame > animator.frame_max-1) animator.frame = 0;
@@ -1289,13 +1341,6 @@ const animator = {
 
         df.model.data_index = animator.frame;
         df.pos = df.model.data_set[df.model.data_index];
-
-
-        const a = 2.0;
-
-
-        date_trace.trace(a+' ok');
-        load_trace.trace(a+' ok');
 
     },
     animate(){
@@ -1312,9 +1357,19 @@ const animator = {
         }
 
         df.update_frame();
+        date_trace.trace('ok');
+        load_trace.trace('ok');
+
         setTimeout(animator.animate, config.animator.rate);
     }
 }
+
+// function g_dd(t){
+//     const dt = get_t_from_dateStamp(t);
+//
+//     //console.log(t, dt.dd, ts);
+//     return dt;
+// }
 
 const load_queue = {
     mode:'ANIMATE',///'ANIMATE', //'STATIC',
@@ -1340,8 +1395,12 @@ const load_queue = {
 
     async crawl(meta_data){
         //console.log(meta_data);
-        df.read_vertices(meta_data);
-        return true;
+        if(meta_data.raw.data) {
+            df.read_vertices(meta_data);
+            return true;
+        }else{
+            return false;
+        }
     },
 
     status(count, obj){
@@ -1362,12 +1421,29 @@ const load_queue = {
                 return {url:config.assets_path+obj_str, type:'json', cat:'assets', id:id}
             })
 
+            load_queue.manifest_data.sort((a, b) => (get_t_from_dateStamp(a.id).dd.valueOf()) > (get_t_from_dateStamp(b.id).dd.valueOf()) ? -1 : 1);
 
-            //load_queue.manifest_data.sort((a, b) => (g_dd(a.id).dd.valueOf()) > (g_dd(b.id).dd.valueOf()) ? 1 : -1);
+            if(config.data_iteration_limit !== null){
+                load_queue.manifest_data.splice(config.data_iteration_limit, load_queue.manifest_data.length);
+            }
 
-            // load_queue.manifest_data.splice(80, load_queue.manifest_data.length);
-            //
             load_queue.manifest_data.reverse();
+            //
+            //
+            // for(let d=0;d<load_queue.manifest_data.length; d++){
+            //     const kd = get_t_from_dateStamp(load_queue.manifest_data[d].id).dd.valueOf();
+            //     console.log(load_queue.manifest_data[d].id, kd);
+            // }
+
+
+            ///
+
+
+
+
+
+
+            //
 
             prog_bar.subdivisions = load_queue.manifest_data.length;
             //load_queue.trace.result = load_queue.manifest_data.length+' items in queue';
@@ -1376,12 +1452,11 @@ const load_queue = {
             df.init_map();
             df.make_vertices();
             labels.make_label_object(null);
-            load_queue.asset(0); //#// loads asset zero (0)
-            //load_queue.index++;
+            load_queue.asset(0);
         }
 
         if(obj_item === 'asset'){
-            // console.log('asset', index);
+            //console.log('asset', index, res[0].id);
             // //df.data_set.push(...res);
             // //df.data = [...res];
             // //console.log(res[0]);
@@ -1391,6 +1466,11 @@ const load_queue = {
             if(load_queue.mode === 'ANIMATE') {
 
                 load_queue.crawl(res[0]).then(c_res => {
+                    if(!c_res){
+                        const cut = load_queue.manifest_data.splice(index,1);
+                        console.log(res[0], index, cut);
+                        index -= 1;
+                    }
                     load_queue.index = index;
                     load_queue.info.progress = `${load_queue.index+1}/${load_queue.manifest_data.length}`;
 
@@ -1398,6 +1478,7 @@ const load_queue = {
 
                     if (index < load_queue.manifest_data.length-1) {
                         load_queue.asset(index+1);
+                        load_trace.trace(null);
                     } else {
                         load_queue.info.status = `Completed ${load_queue.manifest_data.length} data assets.`;
                         load_queue.is_complete = true;

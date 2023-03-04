@@ -1,5 +1,5 @@
 const config = {
-    stats: true,
+    stats: false,
     test: true,
     view: {
         colors:{
@@ -51,7 +51,8 @@ const config = {
     event_callback: null,
     animation_callback: null,
     animator:{
-        value_lerp: 0.25,
+        value_lerp: 0.025,
+        marker_lerp: 0.25,
         rate: 100.0, //ms
         animating: true
     },
@@ -59,6 +60,7 @@ const config = {
     assets_path: 'https://ctipe-production.up.railway.app/',
     debug_trace_state: false,
     debug: {},
+    data_iteration_limit: null //28 // null //96
 }
 
 export default config
