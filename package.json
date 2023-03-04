@@ -20,5 +20,9 @@
     "express": "^4.18.2",
     "nodemon": "^2.0.21",
     "parcel": "^2.8.3"
+  },
+  "nodemonConfig": {
+    "watch": ["src", "src/js/three-sac/*"],
+    "ext": "js, html, css"
   }
 }

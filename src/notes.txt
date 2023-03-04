@@ -3,3 +3,5 @@ or from src folder
 ln -s ../../../library/three-sac ./three-sac
 
 npm install stats.js
+
+"build-watch": "parcel watch ./src/index.html, ./src/js/three-sac/*",
