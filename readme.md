@@ -2,10 +2,10 @@
 
 A 3d model of the CTIPE TOTAL ELECTRON CONTENT FORECAST by NOAA and the NWS
 
-[OPEN](https:scottandrecampbell.com/static/ctipe) ctipe-model
+[OPEN](https://scottandrecampbell.com/static/ctipe) ctipe-model
 <font size=2 color=gray>(https:scottandrecampbell.com/static/ctipe)</font>
 
-<a href="https:scottandrecampbell.com/static/ctipe">
+<a href="https://scottandrecampbell.com/static/ctipe">
 <img src="https://scottandrecampbell.com/wp-content/uploads/2023/03/Screen-Shot-2023-03-09-at-15.31.12.png" width="100%">
 </a>
 
@@ -19,4 +19,4 @@ here's a quote:
 This model intends to show the "charge" in the ionosphere. Color values are exaggerated by the Y-axis in the model. The timeseries ends with now and starts 4 days ago at 10 minute intervals. To store the timeseries, a small python app was created ("ctipe" [sourcecode at github](https://github.com/luminome/ctipe)) (currently on railway) and its api shares specific time requests to the app (node). 
 
 This required some pretty exhaustive mental notes.
-Familiarity with this dataset comes from experience: it was a key-component of the [THREADING EXPOSITION](https:scottandrecampbell.com/threading-exposition-at-soapbox-arts).
+Familiarity with this dataset comes from experience: it was a key-component of the [THREADING EXPOSITION](https://scottandrecampbell.com/threading-exposition-at-soapbox-arts).
