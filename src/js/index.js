@@ -1,14 +1,9 @@
-import * as THREE from './three-sac/node_modules/three';
-import {mergeVertices} from './three-sac/node_modules/three/examples/jsm/utils/BufferGeometryUtils';
-import {uiBasicLoader as loader}  from './three-sac/ui-basic-loader.js';
-import {Conrec} from './vendor/conrec.js';
+import * as THREE from 'three';
 
-import {default as scene} from './three-sac/ui-three-base.js';
-import elements from './three-sac/ui-three-elements.js';
-import * as util from './three-sac/ui-util.js';
+import {loader, scene, elements, util} from 'three-sac';
+
 import config from './config.js';
 import package_detail from '../../package.json';
-import {norm_val} from "./three-sac/ui-util.js";
 
 const dom_target = document.getElementById('module-window');
 
@@ -18,7 +13,7 @@ config.model.objects = {};
 const zoom_detail_label = elements.dom_label().init(dom_target, config.view.dom_labels);
 zoom_detail_label.set_position(window.innerWidth/2, 8);
 
-const user_pos = elements.dashed_halo(1.0);
+const user_pos = elements.dashed_circle_marker(1.0);
 config.model.add(user_pos);
 
 /**
@@ -537,12 +532,12 @@ const color_gradient = {
 
 let debug_trace, date_trace, load_trace;
 
-const static_material = new THREE.MeshLambertMaterial({
+const static_material = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
-    // flatShading: true,
-    // metalness:0.5,
-    // roughness:0.5,
-    emissive: 0x333333
+    flatShading: true,
+    metalness:0.5,
+    roughness:0.5,
+    // emissive: 0x333333
 });
 
 const color_bar = {
@@ -719,245 +714,6 @@ const prog_bar = {
 }
 
 const df = {
-    async contours(index=0){
-        // https://gist.github.com/sorcereral/4959573#file-thumbnail-png
-        df.max = 100.0;//Math.max(...df.data[index].raw.data);
-        df.avg = average(df.data[index].raw.data);
-        console.log(df.data[index],"df.max",df.max,"df.avg",df.avg);
-
-        const grid = new Array(df.shape[1]);
-        for (let i=0;i<grid.length;i++){
-            grid[i] = new Array(df.shape[0]);
-            for (let j=0;j<grid[i].length;j++) {
-
-
-                if(df.data_last.length){
-                     grid[i][j] = (df.data[0].raw.data[j*df.shape[1]+i] + df.data_last[0].raw.data[j*df.shape[1]+i])/2.0;
-                }else{
-                    grid[i][j] = df.data[0].raw.data[j*df.shape[1]+i];
-                }
-            }
-        }
-
-        df.data_last = df.data;
-
-
-        const grid_cliff = new Array(grid[0].length);
-        grid_cliff.fill(df.cliff);
-        grid.push(grid_cliff);
-        grid.unshift(grid_cliff);
-        grid.forEach(function(nd) {
-          nd.push(df.cliff);
-          nd.unshift(df.cliff);
-        });
-
-        const lonpx = [];//(grid[0].length-1);
-        const latpy = [];//(grid.length-1);
-
-        for (let i = 0; i < grid[0].length; i++)
-            latpy[i] = (i-1);
-
-        for (let i = grid.length-1; i>=0; i--)
-            lonpx[i] = (i-1);
-
-
-        const zs = new Array(df.contour_levels);
-        for (let i=0;i<df.contour_levels;i++) zs[i] = (Math.round(df.max/df.contour_levels)*i);
-        //for (let i=0;i<df.contour_levels;i++) zs[i] = (Math.round(df.max/df.contour_levels)*i);
-
-        // const average_k = Math.round(df.avg/df.contour_levels);
-        // console.log("average k",average_k);
-
-        df.slice_width = Math.round(df.max/df.contour_levels)*df.y_scale;
-
-        const c = new Conrec(null);
-        c.contour(grid, 0, lonpx.length-1, 0, latpy.length-1, lonpx, latpy, zs.length, zs);
-
-        const material = new THREE.LineBasicMaterial({
-            color: 0x000000
-        });
-
-        const c_grp = c.contourList();
-        df.trace.contours = c_grp.length;
-        const contour_levels = new Array(df.contour_levels);
-        for (let i=0;i<df.contour_levels;i++) contour_levels[i] = [];
-
-        c_grp.map(g =>{
-            contour_levels[parseInt(g.k)].push(g);
-        });
-
-        const data_group = new THREE.Group();
-        data_group.userData.id = df.data[index].id;
-
-        //#// sort by lengths
-        contour_levels.map((lv,L)=>{
-            // const patho = new THREE.ShapePath();
-            // const paths = [];
-            const stack = [];
-            const path_data = [];
-
-            lv.sort((a, b) => a.length < b.length ? 1 : -1);
-
-            lv.map((g, L2) => {
-                const vertices_vc = [];
-                // const vertices = new Float32Array(g.length*3);
-                g.map((g_e,i) =>{
-                    if(typeof(g_e) === 'object'){
-                        // vertices[i*3] = g_e.x+1.0;
-                        // vertices[i*3+1] = g.level*df.y_scale;
-                        // vertices[i*3+2] = df.shape[0]-g_e.y;
-                        vertices_vc.push(new THREE.Vector2(g_e.x+1.0, df.shape[0]-g_e.y));
-                    }
-                })
-                if(L!==null) {
-                    const shape = new THREE.Shape(vertices_vc);
-                    shape.autoClose = true;
-                    const numpoints = Math.floor(shape.getLength()*2.0);
-                    const new_points = shape.getSpacedPoints(numpoints);
-                    const new_vertices_vc = [];
-
-                    if(new_points.length > 4) {
-                        const kvtx = new Float32Array(new_points.length * 3);
-                        const new_x = [];
-                        const new_y = [];
-                        let k = 0;
-                        new_points.map((p, i) => {
-                            //if(p.x > 0 && p.y > 0) {
-                                kvtx[k * 3] = p.x;// + 1.0;
-                                kvtx[k * 3 + 1] = (L * df.slice_width)+0.01;//g.level * df.y_scale;(df.slice_width*L)
-                                kvtx[k * 3 + 2] = df.shape[0] - p.y;
-                                new_x.push(p.x);
-                                new_y.push(p.y);
-                                new_vertices_vc.push(new THREE.Vector2(p.x, df.shape[0] - p.y));
-                                k++
-                            //}
-                        })
-
-                        const m_path = new THREE.Path(new_vertices_vc);
-                        m_path.autoClose = true;
-
-                        const snumpoints = Math.floor(m_path.getLength()*2.0);
-                        const snew_points = m_path.getSpacedPoints(snumpoints);
-                        const shape = new THREE.Shape(snew_points);
-
-                        const m_geometry = new THREE.ShapeGeometry(shape);
-                        m_geometry.computeBoundingSphere();
-
-                        const centroid = m_geometry.boundingSphere.center;
-                        centroid.y = df.shape[0] - centroid.y;
-                        console.log(centroid);
-                        // let box = new THREE.Box3().setFromObject(m_geometry);
-                        // let sphere = box.getBoundingSphere();
-                        // let centerPoint = sphere.center;
-
-                        stack.push({id:stack.length, ref:[centroid, new_x, new_y], holes:[], path:m_path});
-
-                        const geometry = new THREE.BufferGeometry();
-                        geometry.setAttribute('position', new THREE.BufferAttribute(kvtx, 3));
-                        const line = new THREE.Line(geometry, material);
-                        data_group.add(line);
-                    }
-                }
-
-
-
-                //console.log(stack);
-            });
-
-            if(stack.length){
-                for(let i=1;i<stack.length;i++){
-                    for(let j = i-1; j >= 0; j--){
-
-
-                        const test = point_in_poly(stack[i].ref[0], stack[j].ref[1], stack[j].ref[2]);
-                        if(test){
-                            stack[j].holes.push(stack[i].path);
-                            stack.splice(i,1);
-                            i--;
-                            break;
-                        }
-                    }
-                }
-
-
-                for(let s=0;s<stack.length;s++){
-                    const numpoints = Math.floor(stack[s].path.getLength()*2.0);
-                    const new_points = stack[s].path.getSpacedPoints(numpoints);
-                    const shape = new THREE.Shape(new_points);
-
-                    if(stack[s].holes.length){
-                        stack[s].holes.map(h => {
-                            shape.holes.push(h);
-                        });
-                    }
-
-                    //console.log(L, shape);
-
-                    const extrudeSettings = {
-                        steps: 1,
-                        depth: df.slice_width, //Math.round(df.max/(df.contour_levels))*df.y_scale,
-                        bevelEnabled: false,
-                    };
-
-                    let geometry = new THREE.ExtrudeGeometry( shape, extrudeSettings );
-
-                    // const geometry = new THREE.ShapeGeometry(shape);
-                    geometry.rotateX(Math.PI/2);
-                    geometry.translate(0.0, (df.slice_width*L)+0.001, 0.0);
-                    geometry = mergeVertices(geometry);
-
-                    const color_step = 0.1/(df.contour_levels-1);
-                    util_color.setHSL(0.1-(L*color_step),1.0,0.5-(L*color_step));
-
-                    const material = new THREE.MeshStandardMaterial( {
-                        color: util_color,
-                    });
-                    const mesh = new THREE.Mesh( geometry, material ) ;
-                    data_group.add( mesh );
-
-                }
-
-                // console.log(L, stack);
-                // console.log(L, path_data);
-
-            }
-            //
-            // patho.subPaths = paths;
-            // //patho.autoClose = true;
-            //
-            // const shapes = patho.toShapes();
-            //
-            // shapes.sort((a, b) => a.curves.length < b.curves.length ? 1 : -1);
-            // console.log(l, shapes);
-            //
-            // if(l!==null){
-            //     shapes.map(s => {
-            //         s.autoClose = true;
-            //         const geometry = new THREE.ShapeGeometry( s );
-            //         geometry.rotateX(Math.PI/2);
-            //         geometry.translate(0.0, (Math.round(df.max/(df.contour_levels))*l)*df.y_scale, 0.0);
-            //
-            //         const material = new THREE.MeshStandardMaterial( {
-            //             color: 0x00ff00,
-            //             side:THREE.DoubleSide,
-            //             transparent: true,
-            //             opacity:0.25
-            //         });
-            //         const mesh = new THREE.Mesh( geometry, material ) ;
-            //         df.sectors.object.add( mesh );
-            //     })
-            //
-            // }
-            //console.log(l, patho, shapes);
-        });
-
-        df.model.data.children.map(c => c.visible = false);
-        df.model.data.add( data_group );
-
-        //df.trace.electrogrunge = df.model.data.children.map(c => c.userData.id);
-
-        return true;
-    },
     init_map(){
         df.box_helper = new THREE.Box3Helper(df.box, 0x666666);
         df.bounds_box_helper = new THREE.Box3Helper(df.bounds_box, 0x666600);
@@ -1292,7 +1048,7 @@ const df = {
         active: true,
         sigma: 1.5
     },
-    up_res_iterations: 2,
+    up_res_iterations: config.model_resolution,
     box: new THREE.Box3(),
     bounds_box: new THREE.Box3(),
     trace:{},

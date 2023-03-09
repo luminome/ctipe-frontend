@@ -8,10 +8,10 @@ app.use(express.static('dist'));
 app.use(express.static('static'));
 
 
-const map_router = require('./handler.js');
-console.log(map_router);
+// const map_router = require('./handler.js');
+// console.log(map_router);
 
-app.use('/test', map_router);
+//#app.use('/test', map_router);
 
 
 // app.get('/what', (req, res) => {

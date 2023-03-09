@@ -2,13 +2,13 @@
 
 <html lang="en">
 <head>
-	<title>sac - template</title>
+	<title>sac - ctipe viewer</title>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 	<style>
 		body {
 			background-color: rgba(50,50,50,1.0);
-			color: rgba(100,255,100,1.0);
+			color: #666666;
 			margin:0;
 			padding:0;
 			font-family: heavy_data, sans-serif;
@@ -32,11 +32,20 @@
 		#module-window{
 			position:absolute;
 		}
+		#instructions-window{
+			position:absolute;
+			bottom:3px;
+			width:100vw;
+			text-align: center;
+		}
 	</style>
 </head>
 <body>
 
 <div id="module-window"></div>
+<div id="instructions-window">
+	space to pause/play, arrows to move to next/prev frame
+</div>
 <div id="obs">empty</div>
 <script type="module" src="./js/index.js"></script>
 <!--<script type="module" src="./js/sample-index.js"></script>-->

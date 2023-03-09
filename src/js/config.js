@@ -46,6 +46,7 @@ const config = {
     },
     model_w: 20.0,
     model_h: 20.0,
+    model_resolution: 3,
     default_camera_z: 20.0,
     default_camera_pos: [0,10,0],
     event_callback: null,
